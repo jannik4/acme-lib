@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::api::{ApiAccount, ApiDirectory, ApiIdentifier, ApiOrder, ApiRevocation};
 use crate::cert::Certificate;
 use crate::order::{NewOrder, Order};
-use crate::persist::{Persist, PersistKey, PersistKind};
+use crate::persist::Persist;
 use crate::req::req_expect_header;
 use crate::trans::Transport;
 use crate::util::{base64url, read_json};
@@ -80,28 +80,7 @@ impl<P: Persist> Account<P> {
     /// [downloaded]: order/struct.CertOrder.html#method.download_and_save_cert
     /// [valid days left]: struct.Certificate.html#method.valid_days_left
     pub fn certificate(&self, primary_name: &str) -> Result<Option<Certificate>> {
-        // details needed for persistence
-        let realm = &self.inner.realm;
-        let persist = &self.inner.persist;
-
-        // read primary key
-        let pk_key = PersistKey::new(realm, PersistKind::PrivateKey, primary_name);
-        debug!("Read private key: {}", pk_key);
-        let private_key = persist
-            .get(&pk_key)?
-            .and_then(|s| String::from_utf8(s).ok());
-
-        // read certificate
-        let pk_crt = PersistKey::new(realm, PersistKind::Certificate, primary_name);
-        debug!("Read certificate: {}", pk_crt);
-        let certificate = persist
-            .get(&pk_crt)?
-            .and_then(|s| String::from_utf8(s).ok());
-
-        Ok(match (private_key, certificate) {
-            (Some(k), Some(c)) => Some(Certificate::new(k, c)),
-            _ => None,
-        })
+        Certificate::load(&self.inner.realm, &self.inner.persist, primary_name)
     }
 
     /// Create a new order to issue a certificate for this account.

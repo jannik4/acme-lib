@@ -8,6 +8,7 @@ use openssl::stack::Stack;
 use openssl::x509::extension::SubjectAlternativeName;
 use openssl::x509::{X509Req, X509ReqBuilder, X509};
 
+use crate::persist::{Persist, PersistKey, PersistKind};
 use crate::Result;
 
 lazy_static! {
@@ -88,6 +89,42 @@ impl Certificate {
             private_key,
             certificate,
         }
+    }
+
+    /// Get an already issued and [downloaded] certificate.
+    ///
+    /// Every time a certificate is downloaded, the certificate and corresponding
+    /// private key are persisted. This method returns an already existing certificate
+    /// from the local storage (no API calls involved).
+    ///
+    /// This can form the basis for implemeting automatic renewal of
+    /// certificates where the [valid days left] are running low.
+    ///
+    /// [downloaded]: order/struct.CertOrder.html#method.download_and_save_cert
+    /// [valid days left]: struct.Certificate.html#method.valid_days_left
+    pub fn load<P: Persist>(
+        realm: &str,
+        persist: &P,
+        primary_name: &str,
+    ) -> Result<Option<Certificate>> {
+        // read primary key
+        let pk_key = PersistKey::new(realm, PersistKind::PrivateKey, primary_name);
+        debug!("Read private key: {}", pk_key);
+        let private_key = persist
+            .get(&pk_key)?
+            .and_then(|s| String::from_utf8(s).ok());
+
+        // read certificate
+        let pk_crt = PersistKey::new(realm, PersistKind::Certificate, primary_name);
+        debug!("Read certificate: {}", pk_crt);
+        let certificate = persist
+            .get(&pk_crt)?
+            .and_then(|s| String::from_utf8(s).ok());
+
+        Ok(match (private_key, certificate) {
+            (Some(k), Some(c)) => Some(Certificate::new(k, c)),
+            _ => None,
+        })
     }
 
     /// The PEM encoded private key.
